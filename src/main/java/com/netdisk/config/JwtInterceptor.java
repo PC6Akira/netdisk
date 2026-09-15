@@ -23,11 +23,18 @@ public class JwtInterceptor implements HandlerInterceptor {
             return true;
         }
         String auth = request.getHeader("Authorization");
-        if (auth == null || !auth.startsWith("Bearer ")) {
+        String token;
+        if (auth != null && auth.startsWith("Bearer ")) {
+            token = auth.substring(7);
+        } else {
+            // 兼容 <a href>/<img src> 等无法自定义请求头的场景：token 走查询参数
+            token = request.getParameter("token");
+        }
+        if (token == null || token.isBlank()) {
             throw new BusinessException(401, "未登录或登录已过期");
         }
         try {
-            Claims claims = jwtUtil.parseToken(auth.substring(7));
+            Claims claims = jwtUtil.parseToken(token);
             request.setAttribute("userId", Long.valueOf(claims.getSubject()));
             request.setAttribute("username", claims.get("username", String.class));
             return true;

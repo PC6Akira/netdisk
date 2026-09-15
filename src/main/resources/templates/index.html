@@ -195,6 +195,14 @@
         timeTd.textContent = formatTime(f.updatedAt);
 
         const opTd = document.createElement('td');
+        if (f.isDir !== 1) {
+            opTd.appendChild(makeLink('预览', () => {
+                window.open(authUrl('/api/files/' + f.id + '/preview'), '_blank');
+            }));
+            opTd.appendChild(makeLink('下载', () => {
+                window.location.href = authUrl('/api/files/' + f.id + '/download');
+            }));
+        }
         opTd.appendChild(makeLink('重命名', async () => {
             const newName = prompt('重命名为', f.name);
             if (!newName || !newName.trim()) return;
@@ -233,6 +241,10 @@
             onClick();
         });
         return a;
+    }
+
+    function authUrl(path) {
+        return path + '?token=' + encodeURIComponent(API.getToken());
     }
 
     function iconFor(name) {
