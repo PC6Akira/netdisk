@@ -10,10 +10,10 @@
 <header class="navbar">
     <div class="brand">网盘</div>
     <div class="user-info">
-        <span>用户名</span>
-        <div class="quota-text">已用 0 B / 10 GB</div>
-        <div class="quota-bar"><div class="used"></div></div>
-        <a th:href="@{/login}">退出</a>
+        <span id="username">…</span>
+        <div class="quota-text" id="quota-text">已用 - / -</div>
+        <div class="quota-bar"><div class="used" id="quota-used"></div></div>
+        <a href="#" id="logout">退出</a>
     </div>
 </header>
 
@@ -35,5 +35,31 @@
         </tbody>
     </table>
 </main>
+<script th:src="@{/js/app.js}"></script>
+<script>
+    // 未登录跳转到登录页
+    if (!API.getToken()) {
+        window.location.href = '/login';
+    }
+
+    document.getElementById('logout').addEventListener('click', (e) => {
+        e.preventDefault();
+        API.clearToken();
+        window.location.href = '/login';
+    });
+
+    (async () => {
+        try {
+            const user = await API.get('/api/user/me');
+            document.getElementById('username').textContent = user.nickname || user.username;
+            document.getElementById('quota-text').textContent =
+                '已用 ' + formatBytes(user.quotaUsed) + ' / ' + formatBytes(user.quotaLimit);
+            const pct = user.quotaLimit > 0 ? (user.quotaUsed / user.quotaLimit * 100) : 0;
+            document.getElementById('quota-used').style.width = Math.min(pct, 100) + '%';
+        } catch (err) {
+            console.error(err);
+        }
+    })();
+</script>
 </body>
 </html>

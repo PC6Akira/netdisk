@@ -33,3 +33,11 @@ mybatis:
 logging:
   level:
     com.netdisk: debug
+
+netdisk:
+  # 单用户默认配额（字节）：10GB
+  default-quota: 10737418240
+  jwt:
+    # HS256 要求密钥至少 32 字节
+    secret: netdisk-dev-jwt-secret-key-please-change-in-production-0123456789
+    expire-minutes: 120

@@ -9,14 +9,33 @@
 <body>
 <div class="auth-container">
     <h1>注册账号</h1>
-    <!-- 阶段 1 接后端：表单提交到 /api/auth/register -->
     <form id="register-form">
-        <input type="text" name="username" placeholder="用户名" required>
-        <input type="text" name="nickname" placeholder="昵称（可选）">
-        <input type="password" name="password" placeholder="密码" required>
+        <input type="text" id="username" placeholder="用户名" required>
+        <input type="text" id="nickname" placeholder="昵称（可选）">
+        <input type="password" id="password" placeholder="密码" required>
+        <div id="error" class="error"></div>
         <button type="submit">注册</button>
     </form>
     <p>已有账号？<a th:href="@{/login}">去登录</a></p>
 </div>
+<script th:src="@{/js/app.js}"></script>
+<script>
+    document.getElementById('register-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const nickname = document.getElementById('nickname').value.trim();
+        const password = document.getElementById('password').value;
+        const errorEl = document.getElementById('error');
+        errorEl.textContent = '';
+        try {
+            const data = await API.post('/api/auth/register', { username, password, nickname });
+            API.setToken(data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/';
+        } catch (err) {
+            errorEl.textContent = err.message;
+        }
+    });
+</script>
 </body>
 </html>
