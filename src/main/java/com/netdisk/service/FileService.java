@@ -18,9 +18,11 @@ import java.util.List;
 public class FileService {
 
     private final FileMapper fileMapper;
+    private final StorageService storageService;
 
-    public FileService(FileMapper fileMapper) {
+    public FileService(FileMapper fileMapper, StorageService storageService) {
         this.fileMapper = fileMapper;
+        this.storageService = storageService;
     }
 
     public List<FileVO> list(Long userId, Long parentId) {
@@ -72,20 +74,25 @@ public class FileService {
     }
 
     public void delete(Long userId, Long id) {
-        File f = requireOwned(userId, id);
-        // 物理删除：收集文件夹下所有后代 id，连同自身一起删
-        List<Long> ids = new ArrayList<>();
-        collectDescendants(userId, id, ids);
-        ids.add(id);
-        fileMapper.deleteByIds(ids);
+        File root = requireOwned(userId, id);
+        List<File> all = new ArrayList<>();
+        collectAll(userId, id, all);
+        all.add(root);
+        // 先删 DB 记录（单条批量 DELETE，原子），再删物理文件（best-effort）
+        fileMapper.deleteByIds(all.stream().map(File::getId).toList());
+        for (File f : all) {
+            if (f.getIsDir() != null && f.getIsDir() == 0 && f.getStorageKey() != null) {
+                storageService.delete(f.getStorageKey());
+            }
+        }
     }
 
-    private void collectDescendants(Long userId, Long parentId, List<Long> acc) {
+    private void collectAll(Long userId, Long parentId, List<File> acc) {
         List<File> children = fileMapper.findByUserIdAndParentId(userId, parentId);
         for (File child : children) {
-            acc.add(child.getId());
+            acc.add(child);
             if (child.getIsDir() != null && child.getIsDir() == 1) {
-                collectDescendants(userId, child.getId(), acc);
+                collectAll(userId, child.getId(), acc);
             }
         }
     }
