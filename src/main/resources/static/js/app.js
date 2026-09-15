@@ -40,6 +40,9 @@ const API = {
     },
     get(url) {
         return this.request(url, { method: 'GET' });
+    },
+    del(url) {
+        return this.request(url, { method: 'DELETE' });
     }
 };
 
