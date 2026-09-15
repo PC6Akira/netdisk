@@ -13,4 +13,6 @@ public interface UserMapper {
     User findById(@Param("id") Long id);
 
     int insert(User user);
+
+    int increaseQuotaUsed(@Param("id") Long id, @Param("delta") long delta);
 }

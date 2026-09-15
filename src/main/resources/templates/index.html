@@ -25,6 +25,14 @@
         <span class="path" id="current-path">根目录</span>
     </div>
 
+    <input type="file" id="file-input" style="display:none">
+
+    <div class="upload-progress" id="upload-progress" style="display:none">
+        <span id="upload-filename"></span>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <span id="upload-pct">0%</span>
+    </div>
+
     <table class="file-table">
         <thead>
         <tr><th>名称</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
@@ -66,7 +74,13 @@
     });
 
     document.getElementById('btn-upload').addEventListener('click', () => {
-        alert('上传功能将在阶段 3 实现');
+        document.getElementById('file-input').click();
+    });
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) uploadFile(file);
+        e.target.value = '';
     });
 
     async function loadFiles() {
@@ -87,6 +101,70 @@
         } catch (err) {
             tbody.innerHTML = '<tr><td colspan="4" class="empty">' + err.message + '</td></tr>';
         }
+    }
+
+    async function refreshUser() {
+        try {
+            const user = await API.get('/api/user/me');
+            document.getElementById('username').textContent = user.nickname || user.username;
+            document.getElementById('quota-text').textContent =
+                '已用 ' + formatBytes(user.quotaUsed) + ' / ' + formatBytes(user.quotaLimit);
+            const pct = user.quotaLimit > 0 ? (user.quotaUsed / user.quotaLimit * 100) : 0;
+            document.getElementById('quota-used').style.width = Math.min(pct, 100) + '%';
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('parentId', currentParentId);
+
+        const prog = document.getElementById('upload-progress');
+        const fill = document.getElementById('progress-fill');
+        const pct = document.getElementById('upload-pct');
+        document.getElementById('upload-filename').textContent = file.name;
+        prog.style.display = 'flex';
+        fill.style.width = '0%';
+        pct.textContent = '0%';
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/files/upload');
+        xhr.setRequestHeader('Authorization', 'Bearer ' + API.getToken());
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const p = Math.round(e.loaded / e.total * 100);
+                fill.style.width = p + '%';
+                pct.textContent = p + '%';
+            }
+        };
+        xhr.onload = async () => {
+            prog.style.display = 'none';
+            let data;
+            try {
+                data = JSON.parse(xhr.responseText);
+            } catch (e) {
+                alert('服务器响应异常');
+                return;
+            }
+            if (data.code !== 0) {
+                if (data.code === 401) {
+                    API.clearToken();
+                    window.location.href = '/login';
+                    return;
+                }
+                alert(data.message || '上传失败');
+            } else {
+                await loadFiles();
+                await refreshUser();
+            }
+        };
+        xhr.onerror = () => {
+            prog.style.display = 'none';
+            alert('上传失败');
+        };
+        xhr.send(formData);
     }
 
     function renderRow(f) {
@@ -133,6 +211,7 @@
             try {
                 await API.del('/api/files/' + f.id);
                 await loadFiles();
+                await refreshUser();
             } catch (err) {
                 alert(err.message);
             }
@@ -172,16 +251,7 @@
     }
 
     (async () => {
-        try {
-            const user = await API.get('/api/user/me');
-            document.getElementById('username').textContent = user.nickname || user.username;
-            document.getElementById('quota-text').textContent =
-                '已用 ' + formatBytes(user.quotaUsed) + ' / ' + formatBytes(user.quotaLimit);
-            const pct = user.quotaLimit > 0 ? (user.quotaUsed / user.quotaLimit * 100) : 0;
-            document.getElementById('quota-used').style.width = Math.min(pct, 100) + '%';
-        } catch (err) {
-            console.error(err);
-        }
+        await refreshUser();
         await loadFiles();
     })();
 </script>
