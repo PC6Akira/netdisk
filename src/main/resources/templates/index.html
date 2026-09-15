@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的网盘</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<header class="navbar">
+    <div class="brand">网盘</div>
+    <div class="user-info">
+        <span>用户名</span>
+        <div class="quota-text">已用 0 B / 10 GB</div>
+        <div class="quota-bar"><div class="used"></div></div>
+        <a th:href="@{/login}">退出</a>
+    </div>
+</header>
+
+<main class="container">
+    <div class="toolbar">
+        <button>上传文件</button>
+        <button>新建文件夹</button>
+    </div>
+
+    <!-- 阶段 2 接后端：替换为真实文件列表 -->
+    <table class="file-table">
+        <thead>
+        <tr><th>名称</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+        <tr><td>📁 我的文档</td><td>-</td><td>2026-09-15 10:00</td><td><a href="#">重命名</a><a href="#">删除</a></td></tr>
+        <tr><td>📄 示例图片.jpg</td><td>1.2 MB</td><td>2026-09-15 09:30</td><td><a href="#">预览</a><a href="#">下载</a><a href="#">删除</a></td></tr>
+        <tr><td>🎬 示例视频.mp4</td><td>256 MB</td><td>2026-09-14 18:20</td><td><a href="#">预览</a><a href="#">下载</a><a href="#">删除</a></td></tr>
+        </tbody>
+    </table>
+</main>
+</body>
+</html>
