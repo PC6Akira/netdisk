@@ -18,10 +18,12 @@
         LIMIT 1
     </select>
 
-    <select id="findByMd5" resultType="com.netdisk.entity.File">
+    <select id="findByMd5ForUpdate" resultType="com.netdisk.entity.File">
         SELECT * FROM `file`
         WHERE md5 = #{md5} AND is_dir = 0 AND is_deleted = 0 AND storage_key IS NOT NULL
+        ORDER BY id ASC
         LIMIT 1
+        FOR UPDATE
     </select>
 
     <update id="incrementRefCountByStorageKey">

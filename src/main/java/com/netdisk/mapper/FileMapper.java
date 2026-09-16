@@ -18,7 +18,7 @@ public interface FileMapper {
                              @Param("parentId") Long parentId,
                              @Param("name") String name);
 
-    File findByMd5(@Param("md5") String md5);
+    File findByMd5ForUpdate(@Param("md5") String md5);
 
     int incrementRefCountByStorageKey(@Param("storageKey") String storageKey);
 

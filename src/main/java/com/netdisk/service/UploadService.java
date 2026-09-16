@@ -60,7 +60,8 @@ public class UploadService {
             throw new BusinessException(400, "空间不足");
         }
 
-        File source = fileMapper.findByMd5(md5);
+        // 悲观锁：FOR UPDATE 锁最早的 canonical 行，串行化同一内容的并发秒传（ref_count 读改写）
+        File source = fileMapper.findByMd5ForUpdate(md5);
         if (source == null) {
             return InstantUploadVO.miss();
         }
