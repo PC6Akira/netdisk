@@ -9,6 +9,7 @@ import com.netdisk.mapper.UserMapper;
 import com.netdisk.vo.FileVO;
 import com.netdisk.vo.InstantUploadVO;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,17 +22,20 @@ public class UploadService {
     private final FileMapper fileMapper;
     private final UserMapper userMapper;
     private final StorageService storageService;
+    private final QuotaService quotaService;
 
-    public UploadService(FileMapper fileMapper, UserMapper userMapper, StorageService storageService) {
+    public UploadService(FileMapper fileMapper, UserMapper userMapper, StorageService storageService,
+                         QuotaService quotaService) {
         this.fileMapper = fileMapper;
         this.userMapper = userMapper;
         this.storageService = storageService;
+        this.quotaService = quotaService;
     }
 
     /**
      * 秒传：客户端已算好 MD5，命中则复用已有物理文件 + 引用计数 +1，不传文件本体直接秒回。
      */
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public InstantUploadVO instant(Long userId, InstantUploadRequest req) {
         if (req == null || isBlank(req.getName())) {
             throw new BusinessException(400, "文件名不能为空");
@@ -61,11 +65,8 @@ public class UploadService {
             return InstantUploadVO.miss();
         }
 
-        // 命中：原子扣配额 + 复用物理文件 + 引用计数 +1（全局去重，跨用户复用）
-        int updated = userMapper.increaseQuotaUsed(userId, req.getSize());
-        if (updated == 0) {
-            throw new BusinessException(400, "空间不足");
-        }
+        // 命中：扣配额（乐观锁 version 重试）+ 复用物理文件 + 引用计数 +1（全局去重，跨用户复用）
+        quotaService.deductQuota(userId, req.getSize());
         File f = new File();
         f.setUserId(userId);
         f.setParentId(pid);
@@ -82,7 +83,7 @@ public class UploadService {
         return InstantUploadVO.hit(FileVO.from(f));
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileVO upload(Long userId, Long parentId, MultipartFile file, String md5Param) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(400, "文件不能为空");
@@ -111,11 +112,8 @@ public class UploadService {
         String storageKey = null;
         try {
             storageKey = storageService.store(userId, file);
-            // 原子扣减配额（条件更新，防止并发超卖）
-            int updated = userMapper.increaseQuotaUsed(userId, file.getSize());
-            if (updated == 0) {
-                throw new BusinessException(400, "空间不足");
-            }
+            // 扣减配额（乐观锁 version 重试）
+            quotaService.deductQuota(userId, file.getSize());
             File f = new File();
             f.setUserId(userId);
             f.setParentId(pid);

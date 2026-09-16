@@ -15,9 +15,9 @@
         VALUES (#{username}, #{password}, #{nickname}, #{quotaLimit}, #{quotaUsed}, #{version})
     </insert>
 
-    <update id="increaseQuotaUsed">
-        UPDATE `user` SET quota_used = quota_used + #{delta}
-        WHERE id = #{id} AND quota_used + #{delta} &lt;= quota_limit
+    <update id="increaseQuotaUsedWithVersion">
+        UPDATE `user` SET quota_used = quota_used + #{delta}, version = version + 1
+        WHERE id = #{id} AND version = #{version} AND quota_used + #{delta} &lt;= quota_limit
     </update>
 
 </mapper>

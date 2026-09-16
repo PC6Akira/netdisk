@@ -14,5 +14,5 @@ public interface UserMapper {
 
     int insert(User user);
 
-    int increaseQuotaUsed(@Param("id") Long id, @Param("delta") long delta);
+    int increaseQuotaUsedWithVersion(@Param("id") Long id, @Param("delta") long delta, @Param("version") int version);
 }

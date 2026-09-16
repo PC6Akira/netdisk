@@ -13,6 +13,7 @@ import com.netdisk.mapper.UserMapper;
 import com.netdisk.vo.FileVO;
 import com.netdisk.vo.InitUploadVO;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,14 +34,17 @@ public class ChunkUploadService {
     private final FileMapper fileMapper;
     private final UserMapper userMapper;
     private final StorageService storageService;
+    private final QuotaService quotaService;
 
     public ChunkUploadService(UploadSessionMapper sessionMapper, FileChunkMapper chunkMapper,
-                              FileMapper fileMapper, UserMapper userMapper, StorageService storageService) {
+                              FileMapper fileMapper, UserMapper userMapper, StorageService storageService,
+                              QuotaService quotaService) {
         this.sessionMapper = sessionMapper;
         this.chunkMapper = chunkMapper;
         this.fileMapper = fileMapper;
         this.userMapper = userMapper;
         this.storageService = storageService;
+        this.quotaService = quotaService;
     }
 
     public InitUploadVO init(Long userId, InitUploadRequest req) {
@@ -108,7 +112,7 @@ public class ChunkUploadService {
         return InitUploadVO.of(sessionId, session.getChunkSize(), session.getTotalChunks(), uploaded);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileVO complete(Long userId, CompleteUploadRequest req) {
         if (req == null || req.getSessionId() == null) {
             throw new BusinessException(400, "会话 ID 不能为空");
@@ -132,10 +136,7 @@ public class ChunkUploadService {
 
         File f = null;
         try {
-            int updated = userMapper.increaseQuotaUsed(userId, session.getTotalSize());
-            if (updated == 0) {
-                throw new BusinessException(400, "空间不足");
-            }
+            quotaService.deductQuota(userId, session.getTotalSize());
             f = new File();
             f.setUserId(userId);
             f.setParentId(session.getParentId());
