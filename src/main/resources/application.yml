@@ -1,5 +1,14 @@
 server:
   port: 8080
+  tomcat:
+    # 线程模型（NIO）：连接多 ≠ 线程多。1000 个长连接不必对应 1000 个工作线程，
+    # 工作线程只处理"就绪"的请求，避免阻塞。
+    threads:
+      max: 200            # 工作线程数：文件流式 I/O + 轻 CPU，200 足够
+      min-spare: 10       # 常驻空闲线程，避免突发请求时频繁建线程
+    accept-count: 100     # 工作线程全忙时的等待队列长度，满了快速失败而非无限排队
+    max-connections: 10000  # NIO 最大并发连接数（含 keep-alive），给 1000 并发 + 空闲连接留余量
+    max-swallow-size: 2MB   # 请求失败/中止时 Tomcat 最多吞掉的请求体，防止大文件占满内存
 
 spring:
   application:
