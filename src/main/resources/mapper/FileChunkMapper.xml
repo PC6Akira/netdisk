@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.netdisk.mapper.FileChunkMapper">
+
+    <insert id="upsert">
+        INSERT INTO `file_chunk` (session_id, chunk_index, status)
+        VALUES (#{sessionId}, #{chunkIndex}, 1)
+        ON DUPLICATE KEY UPDATE status = 1
+    </insert>
+
+    <select id="findIndexesBySessionId" resultType="int">
+        SELECT chunk_index FROM `file_chunk` WHERE session_id = #{sessionId} ORDER BY chunk_index
+    </select>
+
+    <select id="countBySessionId" resultType="int">
+        SELECT COUNT(*) FROM `file_chunk` WHERE session_id = #{sessionId}
+    </select>
+
+    <delete id="deleteBySessionId">
+        DELETE FROM `file_chunk` WHERE session_id = #{sessionId}
+    </delete>
+
+</mapper>

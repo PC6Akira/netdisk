@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.netdisk.mapper.UploadSessionMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO `upload_session` (user_id, file_name, parent_id, total_size, chunk_size, total_chunks, md5, status)
+        VALUES (#{userId}, #{fileName}, #{parentId}, #{totalSize}, #{chunkSize}, #{totalChunks}, #{md5}, #{status})
+    </insert>
+
+    <select id="findById" resultType="com.netdisk.entity.UploadSession">
+        SELECT * FROM `upload_session` WHERE id = #{id}
+    </select>
+
+    <select id="findByUserMd5ParentStatus" resultType="com.netdisk.entity.UploadSession">
+        SELECT * FROM `upload_session`
+        WHERE user_id = #{userId} AND md5 = #{md5} AND parent_id = #{parentId} AND status = #{status}
+        LIMIT 1
+    </select>
+
+    <update id="updateStatus">
+        UPDATE `upload_session` SET status = #{status} WHERE id = #{id}
+    </update>
+
+</mapper>

@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS `upload_session` (
     `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '会话ID',
     `user_id`      BIGINT       NOT NULL COMMENT '上传者ID',
     `file_name`    VARCHAR(255) NOT NULL COMMENT '目标文件名',
+    `parent_id`    BIGINT       NOT NULL DEFAULT 0 COMMENT '目标父目录ID（0=根目录）',
     `total_size`   BIGINT       NOT NULL COMMENT '文件总大小',
     `chunk_size`   INT          NOT NULL COMMENT '单片大小（字节）',
     `total_chunks` INT          NOT NULL COMMENT '总片数',
