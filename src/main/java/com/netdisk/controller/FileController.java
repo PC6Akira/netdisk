@@ -1,11 +1,13 @@
 package com.netdisk.controller;
 
 import com.netdisk.common.ApiResponse;
+import com.netdisk.dto.InstantUploadRequest;
 import com.netdisk.dto.RenameRequest;
 import com.netdisk.service.DownloadService;
 import com.netdisk.service.FileService;
 import com.netdisk.service.UploadService;
 import com.netdisk.vo.FileVO;
+import com.netdisk.vo.InstantUploadVO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
@@ -46,12 +48,20 @@ public class FileController {
         return ApiResponse.ok(fileService.list(userId, parentId));
     }
 
+    @PostMapping("/instant")
+    public ApiResponse<InstantUploadVO> instant(HttpServletRequest request,
+                                                @RequestBody InstantUploadRequest req) {
+        Long userId = (Long) request.getAttribute("userId");
+        return ApiResponse.ok(uploadService.instant(userId, req));
+    }
+
     @PostMapping("/upload")
     public ApiResponse<FileVO> upload(HttpServletRequest request,
                                       @RequestParam(required = false) Long parentId,
-                                      @RequestParam("file") MultipartFile file) {
+                                      @RequestParam("file") MultipartFile file,
+                                      @RequestParam(required = false) String md5) {
         Long userId = (Long) request.getAttribute("userId");
-        return ApiResponse.ok(uploadService.upload(userId, parentId, file));
+        return ApiResponse.ok(uploadService.upload(userId, parentId, file, md5));
     }
 
     @GetMapping("/{id}/download")

@@ -18,6 +18,13 @@ public interface FileMapper {
                              @Param("parentId") Long parentId,
                              @Param("name") String name);
 
+    File findByMd5(@Param("md5") String md5);
+
+    int incrementRefCountByStorageKey(@Param("storageKey") String storageKey);
+
+    int decrementRefCountByStorageKey(@Param("storageKey") String storageKey,
+                                      @Param("delta") int delta);
+
     int insert(File file);
 
     int updateName(@Param("id") Long id, @Param("name") String name);

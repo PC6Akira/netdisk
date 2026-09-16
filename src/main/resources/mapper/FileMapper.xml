@@ -18,6 +18,20 @@
         LIMIT 1
     </select>
 
+    <select id="findByMd5" resultType="com.netdisk.entity.File">
+        SELECT * FROM `file`
+        WHERE md5 = #{md5} AND is_dir = 0 AND is_deleted = 0 AND storage_key IS NOT NULL
+        LIMIT 1
+    </select>
+
+    <update id="incrementRefCountByStorageKey">
+        UPDATE `file` SET ref_count = ref_count + 1 WHERE storage_key = #{storageKey}
+    </update>
+
+    <update id="decrementRefCountByStorageKey">
+        UPDATE `file` SET ref_count = ref_count - #{delta} WHERE storage_key = #{storageKey}
+    </update>
+
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO `file` (user_id, parent_id, name, is_dir, size, md5, storage_key, ref_count, is_deleted)
         VALUES (#{userId}, #{parentId}, #{name}, #{isDir}, #{size}, #{md5}, #{storageKey}, #{refCount}, #{isDeleted})

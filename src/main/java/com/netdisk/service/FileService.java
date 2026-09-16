@@ -9,7 +9,9 @@ import com.netdisk.vo.FileVO;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 文件/目录服务：列表、新建文件夹、重命名、删除。
@@ -78,13 +80,39 @@ public class FileService {
         List<File> all = new ArrayList<>();
         collectAll(userId, id, all);
         all.add(root);
-        // 先删 DB 记录（单条批量 DELETE，原子），再删物理文件（best-effort）
-        fileMapper.deleteByIds(all.stream().map(File::getId).toList());
+
+        // 非目录文件按 storage_key 分组，维护引用计数：归零才删物理文件
+        Map<String, Integer> delCountByKey = new HashMap<>();
         for (File f : all) {
             if (f.getIsDir() != null && f.getIsDir() == 0 && f.getStorageKey() != null) {
-                storageService.delete(f.getStorageKey());
+                delCountByKey.merge(f.getStorageKey(), 1, Integer::sum);
             }
         }
+        for (Map.Entry<String, Integer> e : delCountByKey.entrySet()) {
+            String key = e.getKey();
+            int nDel = e.getValue();
+            int before = refCountOf(all, key);
+            int after = before - nDel;
+            if (after <= 0) {
+                // 该物理文件没有其他引用，删除物理文件
+                storageService.delete(key);
+            } else {
+                // 仍有其他行引用同一物理文件，只把引用计数扣掉（含本批待删行，稍后一并删除）
+                fileMapper.decrementRefCountByStorageKey(key, nDel);
+            }
+        }
+
+        // 先删 DB 记录（单条批量 DELETE，原子）
+        fileMapper.deleteByIds(all.stream().map(File::getId).toList());
+    }
+
+    private int refCountOf(List<File> files, String storageKey) {
+        for (File f : files) {
+            if (storageKey.equals(f.getStorageKey())) {
+                return f.getRefCount() == null ? 0 : f.getRefCount();
+            }
+        }
+        return 0;
     }
 
     private void collectAll(Long userId, Long parentId, List<File> acc) {
