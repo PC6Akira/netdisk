@@ -42,6 +42,7 @@
         </tbody>
     </table>
 </main>
+<script th:src="@{/js/spark-md5.min.js}"></script>
 <script th:src="@{/js/app.js}"></script>
 <script>
     if (!API.getToken()) {
@@ -116,18 +117,57 @@
         }
     }
 
-    function uploadFile(file) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('parentId', currentParentId);
+    // 上传入口：先算 MD5 → 秒传命中直接复用，未命中走正常上传（带 md5）
+    async function uploadFile(file) {
+        const prog = document.getElementById('upload-progress');
+        const fill = document.getElementById('progress-fill');
+        const pct = document.getElementById('upload-pct');
+        document.getElementById('upload-filename').textContent = file.name + '（计算 MD5…）';
+        prog.style.display = 'flex';
+        fill.style.width = '0%';
+        pct.textContent = '';
 
+        let md5;
+        try {
+            md5 = await computeMd5(file);
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+
+        // 秒传：命中则复用已有物理文件，不传文件本体
+        try {
+            const r = await API.post('/api/files/instant', {
+                name: file.name, parentId: currentParentId, size: file.size, md5: md5
+            });
+            if (r && r.instant) {
+                prog.style.display = 'none';
+                await loadFiles();
+                await refreshUser();
+                return;
+            }
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+
+        doUpload(file, md5);
+    }
+
+    function doUpload(file, md5) {
         const prog = document.getElementById('upload-progress');
         const fill = document.getElementById('progress-fill');
         const pct = document.getElementById('upload-pct');
         document.getElementById('upload-filename').textContent = file.name;
-        prog.style.display = 'flex';
         fill.style.width = '0%';
         pct.textContent = '0%';
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('parentId', currentParentId);
+        if (md5) formData.append('md5', md5);
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/files/upload');
@@ -165,6 +205,30 @@
             alert('上传失败');
         };
         xhr.send(formData);
+    }
+
+    // 分片读取文件计算 MD5，避免大文件整体读入内存阻塞主线程
+    function computeMd5(file) {
+        return new Promise((resolve, reject) => {
+            const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 一片
+            const spark = new SparkMD5.ArrayBuffer();
+            const reader = new FileReader();
+            let offset = 0;
+            reader.onload = (e) => {
+                spark.append(e.target.result);
+                offset += e.target.result.byteLength;
+                if (offset < file.size) {
+                    readNext();
+                } else {
+                    resolve(spark.end());
+                }
+            };
+            reader.onerror = () => reject(new Error('读取文件失败，无法计算 MD5'));
+            function readNext() {
+                reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK_SIZE));
+            }
+            readNext();
+        });
     }
 
     function renderRow(f) {
