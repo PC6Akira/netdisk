@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的网盘</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<header class="navbar">
+    <div class="brand">网盘</div>
+    <div class="user-info">
+        <span id="username">…</span>
+        <div class="quota-text" id="quota-text">已用 - / -</div>
+        <div class="quota-bar"><div class="used" id="quota-used"></div></div>
+        <a href="#" id="logout">退出</a>
+    </div>
+</header>
+
+<main class="container">
+    <div class="toolbar">
+        <button id="btn-upload">上传文件</button>
+        <button id="btn-new-folder">新建文件夹</button>
+        <button id="btn-back">返回上级</button>
+        <span class="path" id="current-path">根目录</span>
+    </div>
+
+    <input type="file" id="file-input" style="display:none">
+
+    <div class="upload-progress" id="upload-progress" style="display:none">
+        <span id="upload-filename"></span>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <span id="upload-pct">0%</span>
+    </div>
+
+    <table class="file-table">
+        <thead>
+        <tr><th>名称</th><th>大小</th><th>修改时间</th><th>操作</th></tr>
+        </thead>
+        <tbody id="file-list">
+        <tr><td colspan="4" class="empty">加载中…</td></tr>
+        </tbody>
+    </table>
+</main>
+<script src="/js/spark-md5.min.js"></script>
+<script src="/js/app.js"></script>
+<script>
+    if (!API.getToken()) {
+        window.location.href = '/login';
+    }
+
+    let currentParentId = 0;
+    const pathStack = [];
+
+    document.getElementById('logout').addEventListener('click', (e) => {
+        e.preventDefault();
+        API.clearToken();
+        window.location.href = '/login';
+    });
+
+    document.getElementById('btn-new-folder').addEventListener('click', async () => {
+        const name = prompt('请输入文件夹名称');
+        if (!name || !name.trim()) return;
+        try {
+            await API.post('/api/folders', { name: name.trim(), parentId: currentParentId });
+            await loadFiles();
+        } catch (err) {
+            alert(err.message);
+        }
+    });
+
+    document.getElementById('btn-back').addEventListener('click', () => {
+        currentParentId = pathStack.length > 0 ? pathStack.pop() : 0;
+        loadFiles();
+    });
+
+    document.getElementById('btn-upload').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) uploadFile(file);
+        e.target.value = '';
+    });
+
+    async function loadFiles() {
+        const tbody = document.getElementById('file-list');
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">加载中…</td></tr>';
+        document.getElementById('current-path').textContent =
+            currentParentId === 0 ? '根目录' : '目录 #' + currentParentId;
+        try {
+            const files = await API.get('/api/files?parentId=' + currentParentId);
+            if (files.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="empty">此目录为空</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            for (const f of files) {
+                tbody.appendChild(renderRow(f));
+            }
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="4" class="empty">' + err.message + '</td></tr>';
+        }
+    }
+
+    async function refreshUser() {
+        try {
+            const user = await API.get('/api/user/me');
+            document.getElementById('username').textContent = user.nickname || user.username;
+            document.getElementById('quota-text').textContent =
+                '已用 ' + formatBytes(user.quotaUsed) + ' / ' + formatBytes(user.quotaLimit);
+            const pct = user.quotaLimit > 0 ? (user.quotaUsed / user.quotaLimit * 100) : 0;
+            document.getElementById('quota-used').style.width = Math.min(pct, 100) + '%';
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    // 上传入口：先算 MD5 → 秒传命中直接复用，未命中走正常上传（带 md5）
+    async function uploadFile(file) {
+        const prog = document.getElementById('upload-progress');
+        const fill = document.getElementById('progress-fill');
+        const pct = document.getElementById('upload-pct');
+        document.getElementById('upload-filename').textContent = file.name + '（计算 MD5…）';
+        prog.style.display = 'flex';
+        fill.style.width = '0%';
+        pct.textContent = '';
+
+        let md5;
+        try {
+            md5 = await computeMd5(file);
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+
+        // 秒传：命中则复用已有物理文件，不传文件本体
+        try {
+            const r = await API.post('/api/files/instant', {
+                name: file.name, parentId: currentParentId, size: file.size, md5: md5
+            });
+            if (r && r.instant) {
+                prog.style.display = 'none';
+                await loadFiles();
+                await refreshUser();
+                return;
+            }
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+
+        if (file.size > 20 * 1024 * 1024) {
+            doChunkedUpload(file, md5);
+        } else {
+            doUpload(file, md5);
+        }
+    }
+
+    function doUpload(file, md5) {
+        const prog = document.getElementById('upload-progress');
+        const fill = document.getElementById('progress-fill');
+        const pct = document.getElementById('upload-pct');
+        document.getElementById('upload-filename').textContent = file.name;
+        fill.style.width = '0%';
+        pct.textContent = '0%';
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('parentId', currentParentId);
+        if (md5) formData.append('md5', md5);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/files/upload');
+        xhr.setRequestHeader('Authorization', 'Bearer ' + API.getToken());
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const p = Math.round(e.loaded / e.total * 100);
+                fill.style.width = p + '%';
+                pct.textContent = p + '%';
+            }
+        };
+        xhr.onload = async () => {
+            prog.style.display = 'none';
+            let data;
+            try {
+                data = JSON.parse(xhr.responseText);
+            } catch (e) {
+                alert('服务器响应异常');
+                return;
+            }
+            if (data.code !== 0) {
+                if (data.code === 401) {
+                    API.clearToken();
+                    window.location.href = '/login';
+                    return;
+                }
+                alert(data.message || '上传失败');
+            } else {
+                await loadFiles();
+                await refreshUser();
+            }
+        };
+        xhr.onerror = () => {
+            prog.style.display = 'none';
+            alert('上传失败');
+        };
+        xhr.send(formData);
+    }
+
+    // 分片读取文件计算 MD5，避免大文件整体读入内存阻塞主线程
+    function computeMd5(file) {
+        return new Promise((resolve, reject) => {
+            const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB 一片
+            const spark = new SparkMD5.ArrayBuffer();
+            const reader = new FileReader();
+            let offset = 0;
+            reader.onload = (e) => {
+                spark.append(e.target.result);
+                offset += e.target.result.byteLength;
+                if (offset < file.size) {
+                    readNext();
+                } else {
+                    resolve(spark.end());
+                }
+            };
+            reader.onerror = () => reject(new Error('读取文件失败，无法计算 MD5'));
+            function readNext() {
+                reader.readAsArrayBuffer(file.slice(offset, offset + CHUNK_SIZE));
+            }
+            readNext();
+        });
+    }
+
+    // 分片上传：>20MB 文件切片并发上传，支持断点续传（init 返回已传分片）
+    async function doChunkedUpload(file, md5) {
+        const prog = document.getElementById('upload-progress');
+        const fill = document.getElementById('progress-fill');
+        const pct = document.getElementById('upload-pct');
+        const nameEl = document.getElementById('upload-filename');
+
+        let init;
+        try {
+            init = await API.post('/api/upload/init', {
+                name: file.name, parentId: currentParentId, size: file.size, md5: md5
+            });
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+
+        const sessionId = init.sessionId;
+        const chunkSize = init.chunkSize;
+        const totalChunks = init.totalChunks;
+        const uploaded = new Set(init.uploadedChunks || []);
+        const pending = [];
+        for (let i = 0; i < totalChunks; i++) {
+            if (!uploaded.has(i)) pending.push(i);
+        }
+
+        nameEl.textContent = file.name;
+        let done = totalChunks - pending.length;
+        renderChunkProgress(fill, pct, done, totalChunks);
+
+        // 并发上传缺失分片（并发 3）
+        const CONCURRENCY = 3;
+        let cursor = 0;
+        const workers = Array.from({ length: Math.min(CONCURRENCY, pending.length) }, async () => {
+            while (cursor < pending.length) {
+                const idx = pending[cursor++];
+                const blob = file.slice(idx * chunkSize, Math.min((idx + 1) * chunkSize, file.size));
+                await uploadChunk(sessionId, idx, blob);
+                done++;
+                renderChunkProgress(fill, pct, done, totalChunks);
+            }
+        });
+        await Promise.all(workers);
+
+        // 合并
+        try {
+            await API.post('/api/upload/complete', { sessionId: sessionId });
+        } catch (err) {
+            prog.style.display = 'none';
+            alert(err.message);
+            return;
+        }
+        prog.style.display = 'none';
+        await loadFiles();
+        await refreshUser();
+    }
+
+    function renderChunkProgress(fill, pct, done, totalChunks) {
+        const p = Math.round(done / totalChunks * 100);
+        fill.style.width = p + '%';
+        pct.textContent = done + '/' + totalChunks + ' 片（' + p + '%）';
+    }
+
+    // 上传单个分片（XMLHttpRequest 携带 JWT）
+    function uploadChunk(sessionId, index, blob) {
+        const formData = new FormData();
+        formData.append('sessionId', sessionId);
+        formData.append('chunkIndex', index);
+        formData.append('file', blob, 'blob');
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload/chunk');
+            xhr.setRequestHeader('Authorization', 'Bearer ' + API.getToken());
+            xhr.onload = () => {
+                let data;
+                try {
+                    data = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    reject(new Error('服务器响应异常'));
+                    return;
+                }
+                if (data.code === 0) {
+                    resolve();
+                } else if (data.code === 401) {
+                    API.clearToken();
+                    window.location.href = '/login';
+                } else {
+                    reject(new Error(data.message || '分片上传失败'));
+                }
+            };
+            xhr.onerror = () => reject(new Error('分片上传失败'));
+            xhr.send(formData);
+        });
+    }
+
+    function renderRow(f) {
+        const tr = document.createElement('tr');
+        const icon = f.isDir === 1 ? '📁' : iconFor(f.name);
+        const size = f.isDir === 1 ? '-' : formatBytes(f.size);
+
+        const nameTd = document.createElement('td');
+        if (f.isDir === 1) {
+            const a = document.createElement('a');
+            a.href = '#';
+            a.textContent = icon + ' ' + f.name;
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                pathStack.push(currentParentId);
+                currentParentId = f.id;
+                loadFiles();
+            });
+            nameTd.appendChild(a);
+        } else {
+            nameTd.textContent = icon + ' ' + f.name;
+        }
+
+        const sizeTd = document.createElement('td');
+        sizeTd.textContent = size;
+
+        const timeTd = document.createElement('td');
+        timeTd.textContent = formatTime(f.updatedAt);
+
+        const opTd = document.createElement('td');
+        if (f.isDir !== 1) {
+            opTd.appendChild(makeLink('预览', () => {
+                window.open(authUrl('/api/files/' + f.id + '/preview'), '_blank');
+            }));
+            opTd.appendChild(makeLink('下载', () => {
+                window.location.href = authUrl('/api/files/' + f.id + '/download');
+            }));
+        }
+        opTd.appendChild(makeLink('重命名', async () => {
+            const newName = prompt('重命名为', f.name);
+            if (!newName || !newName.trim()) return;
+            try {
+                await API.post('/api/files/' + f.id + '/rename', { name: newName.trim() });
+                await loadFiles();
+            } catch (err) {
+                alert(err.message);
+            }
+        }));
+        opTd.appendChild(makeLink('删除', async () => {
+            const tip = f.isDir === 1 ? ' 文件夹内所有内容将一并删除。' : '';
+            if (!confirm('确定删除「' + f.name + '」吗？' + tip)) return;
+            try {
+                await API.del('/api/files/' + f.id);
+                await loadFiles();
+                await refreshUser();
+            } catch (err) {
+                alert(err.message);
+            }
+        }));
+
+        tr.appendChild(nameTd);
+        tr.appendChild(sizeTd);
+        tr.appendChild(timeTd);
+        tr.appendChild(opTd);
+        return tr;
+    }
+
+    function makeLink(text, onClick) {
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = text;
+        a.addEventListener('click', (e) => {
+            e.preventDefault();
+            onClick();
+        });
+        return a;
+    }
+
+    function authUrl(path) {
+        return path + '?token=' + encodeURIComponent(API.getToken());
+    }
+
+    function iconFor(name) {
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+        const videoExts = ['mp4', 'avi', 'mov', 'mkv', 'webm'];
+        if (imageExts.includes(ext)) return '🖼️';
+        if (videoExts.includes(ext)) return '🎬';
+        if (ext === 'pdf') return '📕';
+        return '📄';
+    }
+
+    function formatTime(t) {
+        if (!t) return '-';
+        return t.replace('T', ' ').substring(0, 16);
+    }
+
+    (async () => {
+        await refreshUser();
+        await loadFiles();
+    })();
+</script>
+</body>
+</html>

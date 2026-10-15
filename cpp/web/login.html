@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 网盘</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="auth-container">
+    <h1>网盘登录</h1>
+    <form id="login-form">
+        <input type="text" id="username" placeholder="用户名" required>
+        <input type="password" id="password" placeholder="密码" required>
+        <div id="error" class="error"></div>
+        <button type="submit">登录</button>
+    </form>
+    <p>还没有账号？<a href="/register">去注册</a></p>
+</div>
+<script src="/js/app.js"></script>
+<script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        const errorEl = document.getElementById('error');
+        errorEl.textContent = '';
+        try {
+            const data = await API.post('/api/auth/login', { username, password });
+            API.setToken(data.token);
+            localStorage.setItem('user', JSON.stringify(data.user));
+            window.location.href = '/';
+        } catch (err) {
+            errorEl.textContent = err.message;
+        }
+    });
+</script>
+</body>
+</html>
